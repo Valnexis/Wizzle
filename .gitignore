@@ -1,15 +1,5 @@
-# Xcode
 DerivedData/
 build/
-*.xcuserstate
 *.xcuserdata/
-*.xcworkspace/xcuserdata/
-*.xcodeproj/xcuserdata/
-
-# SwiftPM
-/.build/
-/Packages/
-/Package.resolved
-
-# macOS junk
 .DS_Store
+Wizzle.app/
