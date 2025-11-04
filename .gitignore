@@ -3,3 +3,4 @@ build/
 *.xcuserdata/
 .DS_Store
 Wizzle.app/
+Wizzle.xcodeproj/project.pbxproj
