@@ -4,6 +4,7 @@ import Combine
 struct ChatsListView: View {
     let currentUser: User
     @State private var conversations: [Conversation] = []
+    @State private var isRefreshing = false
 
     init(currentUser: User) {
         self.currentUser = currentUser

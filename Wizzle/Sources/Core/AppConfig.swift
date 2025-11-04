@@ -15,7 +15,7 @@ struct AppConfig {
         let env: AppEnvironment = .dev
         let base: URL = {
             switch env {
-            case .dev: return URL(string: "http://127.0.0.1:3001")!
+            case .dev: return URL(string: "http://192.168.1.45:3001")!
             case .staging: return URL(string: "https://staging.api.wizzle.example")!
             case .prod: return URL(string: "https://api.wizzle.example")!
             }
