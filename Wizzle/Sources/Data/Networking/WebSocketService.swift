@@ -13,7 +13,7 @@ final class WebSocketService: ObservableObject {
     @Published var chatUpdate: Conversation?
 
     func connect(currentUserId: String) {
-        guard let url = URL(string: "ws://127.0.0.1:3001") else { return }
+        guard let url = URL(string: "ws://192.168.1.45:3001") else { return }
         let session = URLSession(configuration: .default)
         task = session.webSocketTask(with: url)
         task?.resume()

@@ -19,16 +19,6 @@ struct MainTabView: View {
             .tag(0)
 
             NavigationStack {
-                NewChatView(currentUser: currentUser)
-                    .navigationTitle("New Chat")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
-            .tabItem {
-                Label("New", systemImage: "square.and.pencil")
-            }
-            .tag(1)
-
-            NavigationStack {
                 ProfileView(currentUser: currentUser, onLogout: onLogout)
                     .navigationTitle("Profile")
                     .navigationBarTitleDisplayMode(.inline)
@@ -36,7 +26,7 @@ struct MainTabView: View {
             .tabItem {
                 Label("Profile", systemImage: "person.crop.circle")
             }
-            .tag(2)
+            .tag(1)
         }
     }
 }
