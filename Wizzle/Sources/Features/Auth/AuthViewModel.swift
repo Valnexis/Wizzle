@@ -18,15 +18,20 @@ final class AuthViewModel: ObservableObject {
 
     // MARK: - Init
     init() {
-        // Launch async setup so the view can appear instantly
         Task { [weak self] in
             self?.repo = await RemoteAuthRepository()
+        }
+
+        // ✅ Try to restore saved session on launch
+        if let saved = SessionStore.shared.loadSession() {
+            print("✅ Restored session for \(saved.user.displayName)")
+            currentUser = saved.user
         }
     }
 
     // MARK: - Actions
     func signUp() async {
-        guard let repo = repo else { return }   // ✅ ensure repo exists
+        guard let repo = repo else { return }
         isLoading = true
         defer { isLoading = false }
 
@@ -40,6 +45,12 @@ final class AuthViewModel: ObservableObject {
                 )
             )
             if let u = currentUser {
+                // ✅ Save session to Keychain
+                SessionStore.shared.saveSession(
+                    user: u,
+                    accessToken: "access-\(u.id)",
+                    refreshToken: "refresh-\(u.id)"
+                )
                 NotificationCenter.default.post(name: .didAuthUser, object: u)
             }
         } catch {
@@ -48,7 +59,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signIn() async {
-        guard let repo = repo else { return }   // ✅ ensure repo exists
+        guard let repo = repo else { return }
         isLoading = true
         defer { isLoading = false }
 
@@ -57,10 +68,23 @@ final class AuthViewModel: ObservableObject {
                 .init(email: email, password: password)
             )
             if let u = currentUser {
+                // ✅ Save session to Keychain
+                SessionStore.shared.saveSession(
+                    user: u,
+                    accessToken: "access-\(u.id)",
+                    refreshToken: "refresh-\(u.id)"
+                )
                 NotificationCenter.default.post(name: .didAuthUser, object: u)
             }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription ?? "Sign in failed."
         }
+    }
+
+    // MARK: - Logout
+    func logout() {
+        SessionStore.shared.clear()
+        currentUser = nil
+        print("🚪 Logged out and cleared session")
     }
 }

@@ -15,6 +15,8 @@ struct Conversation: Codable, Identifiable, Hashable {
     let members: [String]
     let lastMessage: Message?
     let updatedAt: Date
+    
+    var unreadCount: Int? = 0
 }
 
 // MARK: - MessageKind

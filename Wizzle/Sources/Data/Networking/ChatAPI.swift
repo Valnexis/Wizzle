@@ -11,7 +11,10 @@ protocol ChatRepository {
 }
 
 final class RemoteChatRepository: ChatRepository {
+    static let shared = RemoteChatRepository()
+    
     private let api: APIClient
+    
     init(api: APIClient = URLSessionAPI(baseURL: AppConfig.current.apiBaseURL)) {
         self.api = api
     }

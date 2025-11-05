@@ -10,6 +10,7 @@ final class WebSocketService: ObservableObject {
     private var task: URLSessionWebSocketTask?
     @Published var incomingMessage: Message?
     @Published var deliveryUpdate: (String, DeliveryStatus)?
+    @Published var chatUpdate: Conversation?
 
     func connect(currentUserId: String) {
         guard let url = URL(string: "ws://127.0.0.1:3001") else { return }
@@ -73,6 +74,11 @@ final class WebSocketService: ObservableObject {
                         case "read":
                             if let id = json["messageId"] as? String {
                                 self?.deliveryUpdate = (id, .read)
+                            }
+                        case "chat_update":
+                            if let convData = try? JSONSerialization.data(withJSONObject: json["conversation"] ?? [:]),
+                               let conv = try? JSONDecoder().decode(Conversation.self, from: data) {
+                                self?.chatUpdate = conv
                             }
                         default: break
                         }
