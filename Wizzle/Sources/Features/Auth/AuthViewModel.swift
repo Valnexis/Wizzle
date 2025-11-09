@@ -19,65 +19,60 @@ final class AuthViewModel: ObservableObject {
     // MARK: - Init
     init() {
         Task { [weak self] in
-            self?.repo = await RemoteAuthRepository()
+            guard let self else { return }
+            self.repo = await RemoteAuthRepository()
         }
 
-        // ✅ Try to restore saved session on launch
+        // ✅ Attempt to restore previously saved session
         if let saved = SessionStore.shared.loadSession() {
             print("✅ Restored session for \(saved.user.displayName)")
             currentUser = saved.user
         }
     }
 
-    // MARK: - Actions
+    // MARK: - Sign Up
     func signUp() async {
+        guard !email.isEmpty, !password.isEmpty, !givenName.isEmpty, !familyName.isEmpty else {
+            error = "Please fill out all fields."
+            return
+        }
         guard let repo = repo else { return }
+
         isLoading = true
+        error = nil
         defer { isLoading = false }
 
         do {
-            currentUser = try await repo.signUp(
-                .init(
-                    email: email,
-                    password: password,
-                    givenName: givenName,
-                    familyName: familyName
-                )
+            let user = try await repo.signUp(
+                .init(email: email, password: password, givenName: givenName, familyName: familyName)
             )
-            if let u = currentUser {
-                // ✅ Save session to Keychain
-                SessionStore.shared.saveSession(
-                    user: u,
-                    accessToken: "access-\(u.id)",
-                    refreshToken: "refresh-\(u.id)"
-                )
-                NotificationCenter.default.post(name: .didAuthUser, object: u)
-            }
+            currentUser = user
+            persistSession(for: user)
+            NotificationCenter.default.post(name: .didAuthUser, object: user)
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "Sign up failed."
+            handleAuthError(error, context: "Sign up failed")
         }
     }
 
+    // MARK: - Sign In
     func signIn() async {
+        guard !email.isEmpty, !password.isEmpty else {
+            error = "Please enter your email and password."
+            return
+        }
         guard let repo = repo else { return }
+
         isLoading = true
+        error = nil
         defer { isLoading = false }
 
         do {
-            currentUser = try await repo.signIn(
-                .init(email: email, password: password)
-            )
-            if let u = currentUser {
-                // ✅ Save session to Keychain
-                SessionStore.shared.saveSession(
-                    user: u,
-                    accessToken: "access-\(u.id)",
-                    refreshToken: "refresh-\(u.id)"
-                )
-                NotificationCenter.default.post(name: .didAuthUser, object: u)
-            }
+            let user = try await repo.signIn(.init(email: email, password: password))
+            currentUser = user
+            persistSession(for: user)
+            NotificationCenter.default.post(name: .didAuthUser, object: user)
         } catch {
-            self.error = (error as? LocalizedError)?.errorDescription ?? "Sign in failed."
+            handleAuthError(error, context: "Sign in failed")
         }
     }
 
@@ -86,5 +81,26 @@ final class AuthViewModel: ObservableObject {
         SessionStore.shared.clear()
         currentUser = nil
         print("🚪 Logged out and cleared session")
+    }
+
+    // MARK: - Private Helpers
+
+    private func persistSession(for user: User) {
+        SessionStore.shared.saveSession(
+            user: user,
+            accessToken: "access-\(user.id)",
+            refreshToken: "refresh-\(user.id)"
+        )
+    }
+
+    private func handleAuthError(_ error: Error, context: String) {
+        if let appError = error as? AppError {
+            self.error = appError.errorDescription ?? context
+        } else if let localized = error as? LocalizedError {
+            self.error = localized.errorDescription ?? context
+        } else {
+            self.error = context
+        }
+        print("❌ \(context):", error.localizedDescription)
     }
 }

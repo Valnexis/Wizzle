@@ -5,26 +5,32 @@ import Foundation
 /// A lightweight, actor-isolated dependency container.
 /// Initializes shared app-wide services (API, Keychain, Session).
 actor Container {
+    // MARK: Shared Instance
     static let shared = Container()
-
+    
+    // MARK: Dependencies
     var api: APIClient!
     var keychain: KeychainStore!
     var session: SessionStore!
 
+    // MARK: Init
     init() {}
 
-    /// Call once at app launch.
+    /// Call once at app launch to initialize all dependencies
     func setup() {
-        // 🧱 Initialize base dependencies (Foundation only)
+        // Initialize core services (Foundation only, no MainActor)
         let config = AppConfig.current
         self.api = URLSessionAPI(baseURL: config.apiBaseURL)
 
-        // ✅ Use our custom SessionStore
+        // Unified secure session (Keychain + token persistence)
         self.session = SessionStore.shared
 
-        // ✅ Initialize your keychain wrapper (optional, can reuse SessionStore for secure items)
-        self.keychain = SystemKeychainStore()
+        // Optional Keychain wrapper (only if we have SystemKeychainStore.swift)
+        // If that file is removed, just delete this line
+        if let systemStore = try? SystemKeychainStore() {
+            self.keychain = systemStore
+        }
 
-        print("✅ Container setup complete")
+        print("✅ Container setup complete for", config.apiBaseURL.absoluteString)
     }
 }

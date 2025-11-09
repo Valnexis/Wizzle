@@ -8,6 +8,7 @@ struct ChatView: View {
     @State private var input = ""
     @State private var messages: [Message] = []
     @StateObject private var socket = WebSocketService()
+    @FocusState private var isInputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,27 +16,23 @@ struct ChatView: View {
             Composer(input: $input, sendAction: sendTapped)
                 .padding()
                 .background(.ultraThinMaterial)
+                .focused($isInputFocused)
         }
         .navigationTitle(conversation.title ?? "Chat")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             socket.connect(currentUserId: currentUser.id)
             Task { await initialLoad() }
-            // Clear unread for this conversation (don’t touch ChatsListView’s state here)
             UnreadStore.shared.clearUnread(for: conversation.id)
         }
         .onDisappear {
             socket.disconnect()
         }
         .onReceive(socket.$incomingMessage.compactMap { $0 }) { msg in
-            // Append only messages for this conversation
             guard msg.conversationId == conversation.id else { return }
-            messages.append(msg)
+            withAnimation(.spring()) { messages.append(msg) }
 
-            // Acknowledge delivery to the sender
             socket.sendDeliveryStatus(msg.id, to: msg.senderId, status: .delivered)
-
-            // If the message is not mine, also mark read (since I’m looking at the screen)
             if msg.senderId != currentUser.id {
                 socket.sendDeliveryStatus(msg.id, to: msg.senderId, status: .read)
             }
@@ -56,8 +53,7 @@ struct ChatView: View {
         }
     }
 
-    // MARK: - Actions
-
+    // MARK: - Send
     private func sendTapped() {
         Task {
             let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -69,28 +65,31 @@ struct ChatView: View {
                     to: conversation.id,
                     body: .init(senderId: currentUser.id, content: trimmed)
                 )
-                messages.append(msg)
-                socket.sendMessage(msg)
-                EncryptedMessageStore.shared.save(msg)
-                input = ""
+                await MainActor.run {
+                    withAnimation(.spring()) {
+                        messages.append(msg)
+                        socket.sendMessage(msg)
+                        EncryptedMessageStore.shared.save(msg)
+                        input = ""
+                        isInputFocused = true
+                    }
+                }
             } catch {
                 print("❌ Send error:", error)
             }
         }
     }
 
+    // MARK: - Initial Load
     private func initialLoad() async {
         do {
-            // Load cached first for instant UI
             let cached = EncryptedMessageStore.shared.load(for: conversation.id)
             await MainActor.run { self.messages = cached }
 
-            // Then sync from server
             let repo = RemoteMessageRepository()
             let fresh = try await repo.fetchMessages(for: conversation.id)
             await MainActor.run { self.messages = fresh }
 
-            // Mark any not-mine as read (I’m viewing the thread)
             for msg in fresh where msg.senderId != currentUser.id && msg.status != .read {
                 socket.sendDeliveryStatus(msg.id, to: msg.senderId, status: .read)
             }
@@ -100,20 +99,31 @@ struct ChatView: View {
     }
 }
 
-// MARK: - Subviews (small, compiler-friendly)
+// MARK: - Subviews
 
 private struct MessagesList: View {
     let messages: [Message]
     let currentUser: User
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
-                ForEach(messages, id: \.id) { msg in
-                    MessageRow(message: msg, isMine: msg.senderId == currentUser.id)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(messages, id: \.id) { msg in
+                        MessageRow(message: msg, isMine: msg.isOutgoing(for: currentUser.id))
+                            .id(msg.id)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 10)
+            }
+            .onChange(of: messages.count) { _ in
+                if let last = messages.last?.id {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(last, anchor: .bottom)
+                    }
                 }
             }
-            .padding()
         }
     }
 }
@@ -124,34 +134,37 @@ private struct MessageRow: View {
 
     var body: some View {
         HStack {
-            if isMine { Spacer() }
-            VStack(alignment: isMine ? .trailing : .leading, spacing: 2) {
+            if isMine { Spacer(minLength: 40) }
+
+            VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
                 Text(text(for: message))
-                    .padding(8)
-                    .background(isMine ? Color.blue.opacity(0.2) : Color.gray.opacity(0.2))
-                    .cornerRadius(8)
-                Text(statusIcon(for: message.status))
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .padding(10)
+                    .background(isMine ? Color.blue.opacity(0.2) : Color.gray.opacity(0.15))
+                    .cornerRadius(12)
+                    .frame(maxWidth: UIScreen.main.bounds.width * 0.7, alignment: isMine ? .trailing : .leading)
+
+                HStack(spacing: 4) {
+                    Text(message.formattedTime)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    if isMine {
+                        Text(message.status.icon)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
-            if !isMine { Spacer() }
+
+            if !isMine { Spacer(minLength: 40) }
         }
-        .animation(.default, value: message.id)
+        .padding(.horizontal, 4)
+        .transition(.move(edge: isMine ? .trailing : .leading).combined(with: .opacity))
     }
 
     private func text(for message: Message) -> String {
         switch message.kind {
         case .text(let s): return s
         case .file(let name, _, _, _): return "📎 \(name)"
-        }
-    }
-
-    private func statusIcon(for status: DeliveryStatus) -> String {
-        switch status {
-        case .pending: return "⏳"
-        case .sent: return "✓"
-        case .delivered: return "✓✓"
-        case .read: return "✓✓✓"
         }
     }
 }
@@ -161,11 +174,18 @@ private struct Composer: View {
     let sendAction: () -> Void
 
     var body: some View {
-        HStack {
-            TextField("Message", text: $input)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-            Button("Send") { sendAction() }
-                .buttonStyle(.borderedProminent)
+        HStack(spacing: 10) {
+            TextField("Message", text: $input, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...4)
+
+            Button(action: sendAction) {
+                Image(systemName: "paperplane.fill")
+                    .font(.title3)
+                    .rotationEffect(.degrees(45))
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 }

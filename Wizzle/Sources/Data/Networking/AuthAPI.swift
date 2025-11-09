@@ -28,15 +28,15 @@ protocol AuthRepository {
     func signOut() async
 }
 
-// MARK: - Implementation
+// MARK: - Remote Implementation
 
 final class RemoteAuthRepository: AuthRepository {
     private let api: APIClient
     private let session: SessionStore
 
-    // ✅ Now async init to safely touch the Container actor
+    // MARK: Init
     init() async {
-        // Hop into Container actor context
+        // Ensure container setup completed before use
         self.api = await Container.shared.api
         self.session = await Container.shared.session
     }
@@ -44,28 +44,30 @@ final class RemoteAuthRepository: AuthRepository {
     // MARK: - Methods
 
     func signUp(_ req: SignUpRequest) async throws -> User {
-        let body = try JSONEncoder().encode(req)
-        let request = APIRequest(
-            path: "auth/signup",
-            method: .POST,
-            body: body
-        )
-
+        // Cleaner, uses new `APIRequest` JSON convenience
+        let request = try APIRequest(path: "auth/signup", method: .POST, json: req)
         let response: AuthResponse = try await api.send(request)
+        
+        #if DEBUG
+        print("📡 Auth request:", request.path)
+        print("📥 Response:", response.user.displayName)
+        #endif
+
+        // Save tokens securely
         session.accessToken = response.accessToken
         session.refreshToken = response.refreshToken
         return response.user
     }
 
     func signIn(_ req: SignInRequest) async throws -> User {
-        let body = try JSONEncoder().encode(req)
-        let request = APIRequest(
-            path: "auth/signin",
-            method: .POST,
-            body: body
-        )
-
+        let request = try APIRequest(path: "auth/signin", method: .POST, json: req)
         let response: AuthResponse = try await api.send(request)
+        
+        #if DEBUG
+        print("📡 Auth request:", request.path)
+        print("📥 Response:", response.user.displayName)
+        #endif
+        
         session.accessToken = response.accessToken
         session.refreshToken = response.refreshToken
         return response.user

@@ -6,28 +6,35 @@ struct ProfileView: View {
     var onLogout: () -> Void
 
     @State private var copied = false
+    @State private var showLogoutAlert = false
 
     var body: some View {
         List {
+            // MARK: - Header
             Section {
                 HStack(spacing: 16) {
                     InitialsAvatar(text: initials(from: currentUser.displayName))
-                        .frame(width: 64, height: 64)
+                        .frame(width: 72, height: 72)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(currentUser.displayName)
-                            .font(.title3).bold()
-                        Text(currentUser.email)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .font(.title2).bold()
+                        if !currentUser.email.isEmpty {
+                            Text(currentUser.email)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    Spacer()
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 8)
             }
 
+            // MARK: - Account Info
             Section("Account") {
                 HStack {
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("User ID")
+                            .font(.subheadline)
                         Text(currentUser.id)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -39,27 +46,42 @@ struct ProfileView: View {
                         UIPasteboard.general.setValue(currentUser.id,
                                                       forPasteboardType: UTType.plainText.identifier)
                         withAnimation { copied = true }
+                        Haptic.play(.success)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                             withAnimation { copied = false }
                         }
                     } label: {
                         Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                            .labelStyle(.titleAndIcon)
                     }
                     .buttonStyle(.bordered)
+                    .font(.subheadline)
                 }
             }
 
-            Section {
+            // MARK: - Actions
+            Section("Actions") {
                 Button(role: .destructive) {
-                    onLogout()
+                    showLogoutAlert = true
                 } label: {
                     Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
                 }
             }
         }
         .listStyle(.insetGrouped)
+        .navigationTitle("Profile")
+        .alert("Log Out?", isPresented: $showLogoutAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Log Out", role: .destructive) {
+                onLogout()
+                Haptic.play(.warning)
+            }
+        } message: {
+            Text("You will need to sign in again to access your messages.")
+        }
     }
 
+    // MARK: - Helpers
     private func initials(from fullName: String) -> String {
         let parts = fullName.split(separator: " ")
         let first = parts.first?.first.map(String.init) ?? ""
@@ -72,10 +94,14 @@ struct InitialsAvatar: View {
     let text: String
     var body: some View {
         ZStack {
-            Circle().fill(Color.blue.opacity(0.2))
+            Circle()
+                .fill(LinearGradient(colors: [.blue.opacity(0.3), .cyan.opacity(0.3)],
+                                     startPoint: .topLeading,
+                                     endPoint: .bottomTrailing))
             Text(text.isEmpty ? "?" : text)
                 .font(.title2).bold()
+                .foregroundStyle(.blue)
         }
-        .clipShape(Circle())
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
 }

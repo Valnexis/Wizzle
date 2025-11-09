@@ -1,11 +1,14 @@
 import Foundation
 
+// MARK: - Concrete Implementation of APIClient Using URLSession
+
 final class URLSessionAPI: APIClient {
+    // MARK: - Properties
     let baseURL: URL
     private let session: URLSession
     private var tokenProvider: () -> String? = { Container.shared.session.accessToken }
 
-    // Reuse a decoder with good defaults (adjust as needed)
+    // MARK: - JSON Encoder / Decoder
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
         let formatter = ISO8601DateFormatter()
@@ -16,7 +19,10 @@ final class URLSessionAPI: APIClient {
             if let date = formatter.date(from: dateStr) {
                 return date
             }
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date: \(dateStr)")
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid date: \(dateStr)"
+            )
         }
         return d
     }()
@@ -26,7 +32,8 @@ final class URLSessionAPI: APIClient {
         e.dateEncodingStrategy = .iso8601
         return e
     }()
-
+    
+    // MARK: - Init
     init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.session = session
@@ -39,6 +46,11 @@ final class URLSessionAPI: APIClient {
         do {
             return try URLSessionAPI.decoder.decode(T.self, from: data)
         } catch {
+            #if DEBUG
+            if let json = String(data: data, encoding: .utf8) {
+                print("❌ Decoding failed for \(T.self):\n\(json)")
+            }
+            #endif
             throw AppError.decoding
         }
     }
@@ -48,7 +60,6 @@ final class URLSessionAPI: APIClient {
     }
 
     // MARK: - Core request performer
-
     private func data(for request: APIRequest) async throws -> (Data, URLResponse) {
         var urlRequest = URLRequest(url: baseURL.appendingPathComponent(request.path))
         urlRequest.httpMethod = request.method.rawValue
@@ -58,21 +69,35 @@ final class URLSessionAPI: APIClient {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        // Caller-provided headers
+        // Custom headers from request
         for (key, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
 
-        // Authorization
+        // Auth header
         if request.requiresAuth, let token = tokenProvider() {
             urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        
+        #if DEBUG
+        debugPrint("➡️ \(request.method.rawValue) \(urlRequest.url?.absoluteString ?? "")")
+        if let body = request.body, let json = String(data: body, encoding: .utf8) {
+            debugPrint("📤 Body:", json)
+        }
+        #endif
 
         let (data, response) = try await session.data(for: urlRequest)
 
         guard let http = response as? HTTPURLResponse else {
             throw AppError.unknown
         }
+        
+        #if DEBUG
+        debugPrint("⬅️ HTTP \(http.statusCode) for \(request.path)")
+        if let json = String(data: data, encoding: .utf8) {
+            debugPrint("📥 Response:", json)
+        }
+        #endif
 
         switch http.statusCode {
         case 200..<300:

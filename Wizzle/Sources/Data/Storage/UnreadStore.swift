@@ -1,37 +1,60 @@
 import Foundation
 
+// MARK: - Unread Message Count Cache
+/// Stores and retrieves unread message counts per conversation.
+/// Backed by `UserDefaults` for simplicity.
 final class UnreadStore {
     static let shared = UnreadStore()
-    private let key = "wizzle.unreadCounts"
-
     private init() {}
+
+    private let key = "wizzle.unreadCounts"
+    private let queue = DispatchQueue(label: "com.wizzle.unreadStore", qos: .utility)
 
     // MARK: - Read
     func load() -> [String: Int] {
-        (UserDefaults.standard.dictionary(forKey: key) as? [String: Int]) ?? [:]
+        queue.sync {
+            (UserDefaults.standard.dictionary(forKey: key) as? [String: Int]) ?? [:]
+        }
     }
 
     // MARK: - Write
-    func save(_ data: [String: Int]) {
-        UserDefaults.standard.set(data, forKey: key)
+    private func save(_ data: [String: Int]) {
+        queue.async {
+            UserDefaults.standard.set(data, forKey: self.key)
+            UserDefaults.standard.synchronize() // ensures write is flushed promptly
+        }
     }
 
     // MARK: - Update single conversation
     func setUnreadCount(for conversationId: String, count: Int) {
-        var current = load()
-        current[conversationId] = count
-        save(current)
+        queue.async {
+            var current = (UserDefaults.standard.dictionary(forKey: self.key) as? [String: Int]) ?? [:]
+            current[conversationId] = count
+            UserDefaults.standard.set(current, forKey: self.key)
+        }
     }
 
     func incrementUnread(for conversationId: String) {
-        var current = load()
-        current[conversationId, default: 0] += 1
-        save(current)
+        queue.async {
+            var current = (UserDefaults.standard.dictionary(forKey: self.key) as? [String: Int]) ?? [:]
+            current[conversationId, default: 0] += 1
+            UserDefaults.standard.set(current, forKey: self.key)
+        }
     }
 
     func clearUnread(for conversationId: String) {
-        var current = load()
-        current[conversationId] = 0
-        save(current)
+        queue.async {
+            var current = (UserDefaults.standard.dictionary(forKey: self.key) as? [String: Int]) ?? [:]
+            current[conversationId] = 0
+            UserDefaults.standard.set(current, forKey: self.key)
+        }
+    }
+
+    // MARK: - Utilities
+    func clearAll() {
+        queue.async {
+            UserDefaults.standard.removeObject(forKey: self.key)
+            print("🧹 Cleared all unread counts")
+        }
     }
 }

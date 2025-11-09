@@ -15,8 +15,22 @@ struct Conversation: Codable, Identifiable, Hashable {
     let members: [String]
     let lastMessage: Message?
     let updatedAt: Date
-    
+
+    // Local only — not persisted to backend
     var unreadCount: Int? = 0
+
+    // MARK: - Helpers
+    var displayTitle: String {
+        title ?? (isGroup ? "Group Chat" : "Direct Chat")
+    }
+
+    var lastMessagePreview: String {
+        guard let message = lastMessage else { return "No messages yet" }
+        switch message.kind {
+        case .text(let text): return text
+        case .file(let name, _, _, _): return "📎 \(name)"
+        }
+    }
 }
 
 // MARK: - MessageKind
@@ -24,8 +38,11 @@ enum MessageKind: Codable, Hashable {
     case text(String)
     case file(name: String, size: Int64, mime: String, url: URL?)
 
-    enum CodingKeys: String, CodingKey { case type, value, name, size, mime, url }
+    private enum CodingKeys: String, CodingKey {
+        case type, value, name, size, mime, url
+    }
 
+    // Custom decoding
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let type = try container.decode(String.self, forKey: .type)
@@ -40,10 +57,11 @@ enum MessageKind: Codable, Hashable {
             let url = try? container.decode(URL.self, forKey: .url)
             self = .file(name: name, size: size, mime: mime, url: url)
         default:
-            self = .text("⚠️ Unknown kind")
+            self = .text("⚠️ Unknown message type")
         }
     }
 
+    // Custom encoding
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
@@ -61,8 +79,17 @@ enum MessageKind: Codable, Hashable {
 }
 
 // MARK: - DeliveryStatus
-enum DeliveryStatus: String, Codable, Hashable {
+enum DeliveryStatus: String, Codable, Hashable, CaseIterable {
     case pending, sent, delivered, read
+
+    var icon: String {
+        switch self {
+        case .pending: return "⏳"
+        case .sent: return "✓"
+        case .delivered: return "✓✓"
+        case .read: return "✓✓✓"
+        }
+    }
 }
 
 // MARK: - Message
@@ -73,4 +100,15 @@ struct Message: Codable, Identifiable, Hashable {
     let sentAt: Date
     let kind: MessageKind
     let status: DeliveryStatus
+
+    // MARK: - Helpers
+    func isOutgoing(for currentUserId: String) -> Bool {
+        senderId == currentUserId
+    }
+
+    var formattedTime: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: sentAt)
+    }
 }
