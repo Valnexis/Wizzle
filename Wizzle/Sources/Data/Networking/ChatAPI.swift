@@ -13,30 +13,35 @@ struct CreateChatRequest: Codable {
 protocol ChatRepository {
     func listChats() async throws -> [Conversation]
     func createChat(_ req: CreateChatRequest) async throws -> Conversation
+    func deleteChat(id: String) async throws
 }
 
 // MARK: - Remote Implementation
 
 final class RemoteChatRepository: ChatRepository {
     static let shared = RemoteChatRepository()
-    
     private let api: APIClient
-    
-    // MARK: Init
+
+    // MARK: - Init
     init(api: APIClient = URLSessionAPI(baseURL: AppConfig.current.apiBaseURL)) {
         self.api = api
     }
-    
+
     // MARK: - Methods
-    
+
     func listChats() async throws -> [Conversation] {
         let request = APIRequest(path: "chats", method: .GET, requiresAuth: true)
         return try await api.send(request)
     }
-    
+
     func createChat(_ req: CreateChatRequest) async throws -> Conversation {
-        // Using new `APIRequest(json:)` helper for cleaner body creation
-        let request = try APIRequest(path: "chats", method: .POST, json: req, requiresAuth: true)
+        let body = try JSONEncoder().encode(req)
+        let request = APIRequest(path: "chats", method: .POST, body: body, requiresAuth: true)
         return try await api.send(request)
+    }
+
+    func deleteChat(id: String) async throws {
+        let request = APIRequest(path: "chats/\(id)", method: .DELETE, requiresAuth: true)
+        try await api.send(request)
     }
 }

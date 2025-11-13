@@ -10,6 +10,7 @@ struct NewChatView: View {
     @State private var isCreating = false
     @State private var errorMessage: String?
     @State private var successMessage: String?
+    @State private var navigateToChat: Conversation?
 
     var body: some View {
         NavigationStack {
@@ -65,11 +66,29 @@ struct NewChatView: View {
                     isRecipientFocused = true
                 }
             }
+            // NavigationLink to auto-open new conversation automatically
+            .background(
+                NavigationLink(
+                    destination: destinationChatView,
+                    isActive: Binding(
+                        get: { navigateToChat != nil },
+                        set: { if !$0 { navigateToChat = nil }}
+                    ),
+                    label: { EmptyView() }
+              )
+            )
+        }
+    }
+    
+    // MARK: - Destination
+    @ViewBuilder
+    private var destinationChatView: some View {
+        if let chat = navigateToChat {
+            ChatView(conversation: chat, currentUser: currentUser)
         }
     }
 
     // MARK: - Actions
-
     private func createChat() async {
         guard !recipientId.trimmingCharacters(in: .whitespaces).isEmpty else {
             errorMessage = "Please enter a recipient ID."
@@ -81,7 +100,7 @@ struct NewChatView: View {
         successMessage = nil
 
         do {
-            // (Optional) verify user exists — backend check
+            // verify user exists — backend check
             let req = CreateChatRequest(
                 memberIds: [currentUser.id, recipientId],
                 title: title.isEmpty ? nil : title
@@ -89,18 +108,16 @@ struct NewChatView: View {
             let conv = try await RemoteChatRepository.shared.createChat(req)
 
             await MainActor.run {
-                successMessage = "✅ Chat created successfully!"
-                // small delay before dismiss for UX clarity
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                    dismiss()
-                }
+                Haptic.play(.success)
+                navigateToChat = conv // Automatically navigate to ChatView
             }
             print("✅ Created conversation:", conv)
         } catch {
-            print("❌ Create chat error:", error)
             await MainActor.run {
-                errorMessage = "Failed to create chat. Please check the ID and try again."
+                errorMessage = "Failed to create chat: \(error.localizedDescription)"
+                Haptic.play(.error)
             }
+            print("❌ Create chat error:", error)
         }
 
         isCreating = false

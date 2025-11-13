@@ -93,12 +93,33 @@ struct ChatsListView: View {
             }
             .padding()
         } else {
-            List(conversations) { c in
-                NavigationLink(destination: ChatView(conversation: c, currentUser: currentUser)) {
-                    ChatRow(conversation: c)
+            List {
+                ForEach(conversations) { c in
+                    NavigationLink(destination: ChatView(conversation: c, currentUser: currentUser)) {
+                        ChatRow(conversation: c)
+                    }
                 }
+                .onDelete(perform: deleteChats) // Swipe-to-delete
             }
             .refreshable { await refreshChats() }
+        }
+    }
+    
+    // MARK: - Delete Chats
+    private func deleteChats(at offsets: IndexSet) {
+        Task {
+            for index in offsets {
+                let conv = conversations[index]
+                do {
+                    try await RemoteChatRepository.shared.deleteChat(id: conv.id)
+                    await MainActor.run {
+                        conversations.remove(atOffsets: offsets)
+                    }
+                    print("🗑️ Deleted chat \(conv.id)")
+                } catch {
+                    print("❌ Delete chat failed:", error)
+                }
+            }
         }
     }
 
