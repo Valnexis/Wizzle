@@ -12,7 +12,13 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            MessagesList(messages: messages, currentUser: currentUser)
+            MessagesList(
+                messages: messages,
+                currentUser: currentUser,
+                onDeleteForMe: deleteForMe,
+                onDeleteForEveryone: deleteForEveryone
+            )
+            
             Composer(input: $input, sendAction: sendTapped)
                 .padding()
                 .background(.ultraThinMaterial)
@@ -49,6 +55,11 @@ struct ChatView: View {
                     status: newStatus
                 )
                 messages[idx] = m
+            }
+        }
+        .onReceive(socket.$deletedMessageId.compactMap { $0 }) { id in
+            withAnimation {
+                messages.removeAll { $0.id == id }
             }
         }
     }
@@ -97,6 +108,31 @@ struct ChatView: View {
             print("❌ Fetch error:", error)
         }
     }
+    
+    private func deleteForMe(_ id: String) {
+        withAnimation {
+            messages.removeAll { $0.id == id }
+        }
+        // Remove from local encrypted storage
+        EncryptedMessageStore.shared.delete(id: id)
+    }
+
+    private func deleteForEveryone(_ id: String) {
+        Task {
+            // REST delete
+            let repo = RemoteMessageRepository()
+            try? await repo.deleteMessage(id: id)
+
+            // WebSocket broadcast
+            socket.sendDeleteMessage(id: id)
+
+            withAnimation {
+                messages.removeAll { $0.id == id }
+            }
+
+            EncryptedMessageStore.shared.delete(id: id)
+        }
+    }
 }
 
 // MARK: - Subviews
@@ -104,14 +140,22 @@ struct ChatView: View {
 private struct MessagesList: View {
     let messages: [Message]
     let currentUser: User
+    
+    let onDeleteForMe: (String) -> Void
+    let onDeleteForEveryone: (String) -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(messages, id: \.id) { msg in
-                        MessageRow(message: msg, isMine: msg.isOutgoing(for: currentUser.id))
-                            .id(msg.id)
+                        MessageRow(
+                            message: msg,
+                            isMine: msg.isOutgoing(for: currentUser.id),
+                            onDeleteForMe: { _ in onDeleteForMe(msg.id) },
+                            onDeleteForEveryone: { _ in onDeleteForEveryone(msg.id) }
+                        )
+                        .id(msg.id)
                     }
                 }
                 .padding(.horizontal)
@@ -131,6 +175,8 @@ private struct MessagesList: View {
 private struct MessageRow: View {
     let message: Message
     let isMine: Bool
+    var onDeleteForMe: ((String) -> Void)? = nil
+    var onDeleteForEveryone: ((String) -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -141,12 +187,14 @@ private struct MessageRow: View {
                     .padding(10)
                     .background(isMine ? Color.blue.opacity(0.2) : Color.gray.opacity(0.15))
                     .cornerRadius(12)
-                    .frame(maxWidth: UIScreen.main.bounds.width * 0.7, alignment: isMine ? .trailing : .leading)
+                    .frame(maxWidth: UIScreen.main.bounds.width * 0.7,
+                           alignment: isMine ? .trailing : .leading)
 
                 HStack(spacing: 4) {
                     Text(message.formattedTime)
                         .font(.caption2)
                         .foregroundColor(.secondary)
+
                     if isMine {
                         Text(message.status.icon)
                             .font(.caption2)
@@ -154,11 +202,42 @@ private struct MessageRow: View {
                     }
                 }
             }
+            .contextMenu { contextMenu }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                if isMine {
+                    Button(role: .destructive) {
+                        onDeleteForEveryone?(message.id)
+                    } label: {
+                        Label("Delete for Everyone", systemImage: "trash")
+                    }
+                }
+
+                Button(role: .destructive) {
+                    onDeleteForMe?(message.id)
+                } label: {
+                    Label("Delete for Me", systemImage: "person.crop.circle.badge.xmark")
+                }
+            }
 
             if !isMine { Spacer(minLength: 40) }
         }
         .padding(.horizontal, 4)
         .transition(.move(edge: isMine ? .trailing : .leading).combined(with: .opacity))
+    }
+
+    @ViewBuilder private var contextMenu: some View {
+        if isMine {
+            Button(role: .destructive) {
+                onDeleteForEveryone?(message.id)
+            } label: {
+                Label("Delete for Everyone", systemImage: "trash")
+            }
+        }
+        Button(role: .destructive) {
+            onDeleteForMe?(message.id)
+        } label: {
+            Label("Delete for Me", systemImage: "person.crop.circle.badge.xmark")
+        }
     }
 
     private func text(for message: Message) -> String {

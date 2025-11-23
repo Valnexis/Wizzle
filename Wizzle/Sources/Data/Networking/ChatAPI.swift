@@ -1,8 +1,8 @@
 import Foundation
 
 // MARK: - DTOs
-
 /// Request body for creating a new chat or group conversation.
+
 struct CreateChatRequest: Codable {
     let memberIds: [String]
     let title: String?

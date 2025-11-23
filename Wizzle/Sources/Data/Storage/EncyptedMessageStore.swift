@@ -122,4 +122,13 @@ final class EncryptedMessageStore {
             sqlite3_close(db)
         }
     }
+    
+    func delete(id: String) {
+        let query = "DELETE FROM messages WHERE id = ?;"
+        var stmt: OpaquePointer?
+        sqlite3_prepare_v2(db, query, -1, &stmt, nil)
+        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, nil)
+        sqlite3_step(stmt)
+        sqlite3_finalize(stmt)
+    }
 }

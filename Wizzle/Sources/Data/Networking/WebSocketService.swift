@@ -14,6 +14,7 @@ final class WebSocketService: ObservableObject {
     @Published var incomingMessage: Message?
     @Published var deliveryUpdate: (String, DeliveryStatus)?
     @Published var chatUpdate: Conversation?
+    @Published var deletedMessageId: String?
 
     // MARK: - Private Properties
     private var task: URLSessionWebSocketTask?
@@ -107,6 +108,7 @@ final class WebSocketService: ObservableObject {
             }
         }
     }
+    
 
     private func handleIncoming(_ text: String) {
         guard let data = text.data(using: .utf8),
@@ -139,6 +141,12 @@ final class WebSocketService: ObservableObject {
                 chatUpdate = conv
                 print("🔄 Chat updated:", conv.id)
             }
+            
+        case "delete_message":
+            if let id = json["messageId"] as? String {
+                deletedMessageId = id
+                print("🗑 Deleted message arrived:", id)
+            }
 
         default:
             print("⚠️ Unknown WS type:", type)
@@ -151,6 +159,14 @@ final class WebSocketService: ObservableObject {
         Task {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             connect(currentUserId: userId)
+        }
+    }
+    
+    func sendDeleteMessage(id: String) {
+        let payload: [String: Any] = ["type": "delete_message", "messageId": id]
+        if let data = try? JSONSerialization.data(withJSONObject: payload),
+           let text = String(data: data, encoding: .utf8) {
+            task?.send(.string(text)) { _ in }
         }
     }
 }

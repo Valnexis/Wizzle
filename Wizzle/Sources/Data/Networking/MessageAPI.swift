@@ -13,6 +13,7 @@ struct SendMessageRequest: Codable {
 protocol MessageRepository {
     func fetchMessages(for conversationId: String) async throws -> [Message]
     func sendMessage(to conversationId: String, body: SendMessageRequest) async throws -> Message
+    func deleteMessage(id: String) async throws
 }
 
 // MARK: - Remote Implementation
@@ -45,5 +46,10 @@ final class RemoteMessageRepository: MessageRepository {
             requiresAuth: true
         )
         return try await api.send(request)
+    }
+    
+    func deleteMessage(id: String) async throws {
+        let request = APIRequest(path: "messages/\(id), method: .DELETE")
+        try await api.send(request)
     }
 }
